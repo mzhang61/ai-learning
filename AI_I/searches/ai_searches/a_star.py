@@ -3,18 +3,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional
 import heapq
 
-"""
-Best-First Search expands the node with the smallest value of f(n),
-where f(n) is a measure of how promising that node is.
-f(n) can be g(n) : g(n) is cost so far from start ->n. Type is uninformed
-f(n) can be h(n) : estimated distance from n -< goal. Type is informed
-f(n) can be g(n) + h(n) : real cost so far + estimated remaining cost. Type is informed and optimal
-"""
-
-
-# ==========================
-# Core search data structures
-# ==========================
+# --------------------------
+# Core data structures
+# --------------------------
 @dataclass(order=True)
 class PrioritizedItem:
     priority: float
@@ -26,7 +17,7 @@ class Node:
     state: Any
     parent: Optional["Node"] = None
     action: Optional[Any] = None
-    path_cost: float = 0.0
+    path_cost: float = 0.0  # g(n)
 
     def path(self) -> List["Node"]:
         n, acc = self, []
@@ -35,9 +26,9 @@ class Node:
             n = n.parent
         return list(reversed(acc))
 
-# ==========================
-# Problem Interface
-# ==========================
+# --------------------------
+# Problem interface
+# --------------------------
 class Problem:
     def __init__(self, initial: Any, goal: Any):
         self.initial = initial
@@ -53,20 +44,34 @@ class Problem:
         raise NotImplementedError
 
     def action_cost(self, state: Any, action: Any, state2: Any) -> float:
-        return 1.0  # default unit cost
+        return 1.0  # default cost
 
-# ==========================
-# Generic BEST-FIRST-SEARCH
-# ==========================
+# --------------------------
+# Expand
+# --------------------------
 def expand(problem: Problem, node: Node) -> Iterable[Node]:
     s = node.state
     for action in problem.actions(s):
         s2 = problem.result(s, action)
-        cost = node.path_cost + problem.action_cost(s, action, s2)
-        yield Node(state=s2, parent=node, action=action, path_cost=cost)
+        g2 = node.path_cost + problem.action_cost(s, action, s2)
+        yield Node(state=s2, parent=node, action=action, path_cost=g2)
 
-def best_first_search(problem: Problem, f: Callable[[Node], float]) -> Optional[Node]:
+# --------------------------
+# A* Search
+# f(n) = g(n) + h(n)
+#   g_provider: lambda node -> node.path_cost（通常就是 node.path_cost）
+#   h_provider: lambda state -> 估价到目标的启发式
+# --------------------------
+def a_star_search(
+    problem: Problem,
+    h_provider: Callable[[Any], float],
+) -> Optional[Node]:
     start = Node(state=problem.initial, parent=None, action=None, path_cost=0.0)
+
+    def f(n: Node) -> float:
+        # g(n) + h(n)
+        return n.path_cost + h_provider(n.state)
+
     frontier: List[PrioritizedItem] = []
     counter = 0
     heapq.heappush(frontier, PrioritizedItem(f(start), counter, start))
@@ -85,16 +90,17 @@ def best_first_search(problem: Problem, f: Callable[[Node], float]) -> Optional[
                 reached[s] = child
                 counter += 1
                 heapq.heappush(frontier, PrioritizedItem(f(child), counter, child))
-    return None  # failure
 
-# ==========================
-# Helpers (keep generic)
-# ==========================
-def extract_solution(node: Optional[Node]) -> tuple[list[Any], float]:
+    return None
+
+# --------------------------
+# Helpers
+# --------------------------
+def extract_solution(node: Optional[Node]) -> tuple[List[Any], float]:
     if not node:
         return ([], float("inf"))
     path_nodes = node.path()
-    actions = [n.action for n in path_nodes][1:]
+    actions = [n.action for n in path_nodes][1:]  # skip root (action=None)
     return actions, node.path_cost
 
 def print_solution(label: str, node: Optional[Node]) -> None:
